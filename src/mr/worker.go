@@ -48,6 +48,9 @@ func Worker(
 		if filename == "" && state == 2 {
 			break
 		}
+		if filename == "wait" {
+			continue
+		}
 		switch state {
 		case 0:
 			mapWorker(filename, mapf, nReduce)
@@ -108,7 +111,7 @@ func reduceWorker(reducef func(string, []string) string, reduceI int) {
 		i = j
 	}
 	ofile.Close()
-	os.Rename(fmt.Sprintf("t-mr-out-%d", reduceI), fmt.Sprintf("mr-out-%d", reduceI))
+	CommitOutput(reduceI)
 }
 
 func mapWorker(filename string, mapf func(string, string) []KeyValue, nReduce int) {
@@ -137,6 +140,7 @@ func mapWorker(filename string, mapf func(string, string) []KeyValue, nReduce in
 			log.Fatalf("cannot write key val %v", filename)
 		}
 	}
+	CommitFile(filename)
 }
 
 // example function to show how to make an RPC call to the coordinator.
@@ -188,6 +192,26 @@ func GetNReduce() int {
 		log.Fatal("GetNReduce Call failed")
 	}
 	return -1
+}
+
+func CommitFile(file string) {
+	args := CommitFileArgs{}
+	reply := CommitFileReply{}
+	args.Name = file
+	ok := call("Coordinator.CommitFile", &args, &reply)
+	if !ok {
+		log.Fatal("GetNReduce Call failed")
+	}
+}
+
+func CommitOutput(r int) {
+	args := CommitOutputArgs{}
+	reply := CommitOutputReply{}
+	args.I = r
+	ok := call("Coordinator.CommitOutput", &args, &reply)
+	if !ok {
+		log.Fatal("GetNReduce Call failed")
+	}
 }
 
 // send an RPC request to the coordinator, wait for the response.

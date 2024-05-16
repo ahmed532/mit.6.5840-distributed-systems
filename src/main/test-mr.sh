@@ -112,7 +112,7 @@ fi
 
 # wait for remaining workers and coordinator to exit.
 wait
-
+sleep 100
 #########################################################
 # now indexer
 rm -f mr-*

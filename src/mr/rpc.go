@@ -42,6 +42,22 @@ type GetNReduceReply struct {
 	N int
 }
 
+type CommitFileArgs struct {
+	Name string
+}
+
+type CommitFileReply struct {
+	Dummy int
+}
+
+type CommitOutputArgs struct {
+	I int
+}
+
+type CommitOutputReply struct {
+	Dummy int
+}
+
 // Add your RPC definitions here.
 
 // Cook up a unique-ish UNIX-domain socket name
