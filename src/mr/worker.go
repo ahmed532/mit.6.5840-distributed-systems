@@ -8,6 +8,7 @@ import (
 	"net/rpc"
 	"os"
 	"sort"
+	"strings"
 )
 
 // Map functions return a slice of KeyValue.
@@ -41,16 +42,17 @@ func Worker(
 
 	// uncomment to send the Example RPC to the coordinator.
 	// CallExample()
+	nReduce := GetNReduce()
 	for {
-		filename, state := AskForFile()
-		if filename == "" {
+		filename, state, reduceI := AskForFile()
+		if filename == "" && state == 2 {
 			break
 		}
 		switch state {
 		case 0:
-			mapWorker(filename, mapf)
+			mapWorker(filename, mapf, nReduce)
 		case 1:
-			reduceWorker(reducef)
+			reduceWorker(reducef, reduceI)
 		case 2:
 			println("done")
 		default:
@@ -60,56 +62,77 @@ func Worker(
 
 }
 
-func reduceWorker(reducef func(string, []string) string) {
+func reduceWorker(reducef func(string, []string) string, reduceI int) {
 	filenames, err := os.ReadDir(".")
 	if err != nil {
 		log.Fatal("cannot ls dir")
 	}
-	var intermediateFiles []string
+	var allKva []KeyValue
 	for _, f := range filenames {
-		if f.Name()[:9] == "mr-inter-" {
-			intermediateFiles = append(intermediateFiles, f.Name())
+		if !strings.HasSuffix(f.Name(), fmt.Sprint(reduceI)) {
+			continue
 		}
-	}
-
-	var allKva [][]KeyValue
-	for _, f := range intermediateFiles {
-		file, err := os.Open(f)
+		file, err := os.Open(f.Name())
 		if err != nil {
 			log.Fatal("Cannot open intermediate file in reduce")
 		}
+		defer file.Close()
 		dec := json.NewDecoder(file)
-		allKva = append(allKva, []KeyValue{})
 		for {
 			var kv KeyValue
 			if err := dec.Decode(&kv); err != nil {
-				log.Fatal("Cannot read intermediate kv in reduce")
+				break
 			}
-			allKva[len(allKva)-1] = append(allKva[len(allKva)-1], kv)
+			allKva = append(allKva, kv)
 		}
 	}
-	for {
+	sort.Sort(ByKey(allKva))
 
+	oname := fmt.Sprintf("t-mr-out-%d", reduceI)
+	ofile, _ := os.Create(oname)
+	i := 0
+	for i < len(allKva) {
+		j := i + 1
+		for j < len(allKva) && allKva[j].Key == allKva[i].Key {
+			j++
+		}
+		values := []string{}
+		for k := i; k < j; k++ {
+			values = append(values, allKva[k].Value)
+		}
+		output := reducef(allKva[i].Key, values)
+		// println("output: ", output)
+		// this is the correct format for each line of Reduce output.
+		fmt.Fprintf(ofile, "%v %v\n", allKva[i].Key, output)
+
+		i = j
 	}
+	ofile.Close()
+	os.Rename(fmt.Sprintf("t-mr-out-%d", reduceI), fmt.Sprintf("mr-out-%d", reduceI))
 }
 
-func mapWorker(filename string, mapf func(string, string) []KeyValue) {
+func mapWorker(filename string, mapf func(string, string) []KeyValue, nReduce int) {
 	content, err := os.ReadFile(filename)
 	if err != nil {
 		log.Fatalf("cannot read %v", filename)
 	}
 	kva := mapf(filename, string(content))
-	sort.Sort(ByKey(kva))
 
-	oname := fmt.Sprintf("mr-inter-%s", filename[3:])
-	ofile, err := os.Create(oname)
-	if err != nil {
-		log.Fatalf("cannot create %v", oname)
+	var intermediateFileEncoders []*json.Encoder
+	for i := 0; i < nReduce; i++ {
+		oname := fmt.Sprintf("mr-inter-%s-%d", filename[3:], i)
+		ofile, err := os.Create(oname)
+		if err != nil {
+			log.Fatalf("cannot create %v", oname)
+		}
+		defer ofile.Close()
+		enc := json.NewEncoder(ofile)
+		intermediateFileEncoders = append(intermediateFileEncoders, enc)
 	}
-	defer ofile.Close()
-	enc := json.NewEncoder(ofile)
+
 	for _, kv := range kva {
-		err := enc.Encode(&kv)
+		r := ihash(kv.Key) % nReduce
+		err := intermediateFileEncoders[r].Encode(&kv)
 		if err != nil {
 			log.Fatalf("cannot write key val %v", filename)
 		}
@@ -143,16 +166,28 @@ func CallExample() {
 	}
 }
 
-func AskForFile() (string, int) {
+func AskForFile() (string, int, int) {
 	args := AskForFileArgs{}
 	reply := AskForFileReply{}
 	ok := call("Coordinator.AskForFile", &args, &reply)
 	if ok {
-		return reply.Name, reply.State
+		return reply.Name, reply.State, reply.ReducerI
 	} else {
-		fmt.Printf("call failed!\n")
-		panic("bad file")
+		log.Fatal("AskForFile Call failed")
 	}
+	return "", -1, -1
+}
+
+func GetNReduce() int {
+	args := GetNReduceArgs{}
+	reply := GetNReduceReply{}
+	ok := call("Coordinator.GetNReduce", &args, &reply)
+	if ok {
+		return reply.N
+	} else {
+		log.Fatal("GetNReduce Call failed")
+	}
+	return -1
 }
 
 // send an RPC request to the coordinator, wait for the response.

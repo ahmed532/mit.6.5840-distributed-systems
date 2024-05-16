@@ -29,8 +29,17 @@ type AskForFileArgs struct {
 }
 
 type AskForFileReply struct {
-	Name  string
-	State int
+	Name     string
+	State    int
+	ReducerI int
+}
+
+type GetNReduceArgs struct {
+	Dummy int
+}
+
+type GetNReduceReply struct {
+	N int
 }
 
 // Add your RPC definitions here.

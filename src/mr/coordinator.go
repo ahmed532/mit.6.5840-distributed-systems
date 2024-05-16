@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/rpc"
 	"os"
+	"sync"
 )
 
 type InputFile struct {
@@ -17,6 +18,8 @@ type Coordinator struct {
 	// Your definitions here.
 	InputFiles []InputFile
 	nReduce    int
+	nReduceI   int
+	lock       sync.Mutex
 }
 
 // Your code here -- RPC handlers for the worker to call.
@@ -30,6 +33,8 @@ func (c *Coordinator) Example(args *ExampleArgs, reply *ExampleReply) error {
 }
 
 func (c *Coordinator) AskForFile(args *AskForFileArgs, reply *AskForFileReply) error {
+	c.lock.Lock()
+	defer c.lock.Unlock()
 	for i, f := range c.InputFiles {
 		if f.processed == 0 {
 			reply.Name = f.file
@@ -39,14 +44,21 @@ func (c *Coordinator) AskForFile(args *AskForFileArgs, reply *AskForFileReply) e
 		}
 	}
 
-	for i, f := range c.InputFiles {
-		if f.processed == 1 {
-			reply.Name = "reducer"
-			reply.State = 1
-			c.InputFiles[i].processed = 2
-			return nil
-		}
+	if c.nReduceI < c.nReduce {
+		reply.Name = "reducer"
+		reply.State = 1
+		reply.ReducerI = c.nReduceI
+		c.nReduceI++
+	} else {
+		reply.Name = ""
+		reply.State = 2
+		reply.ReducerI = -1
 	}
+	return nil
+}
+
+func (c *Coordinator) GetNReduce(args *GetNReduceArgs, reply *GetNReduceReply) error {
+	reply.N = c.nReduce
 	return nil
 }
 
@@ -67,11 +79,9 @@ func (c *Coordinator) server() {
 // main/mrcoordinator.go calls Done() periodically to find out
 // if the entire job has finished.
 func (c *Coordinator) Done() bool {
-	ret := false
-
-	// Your code here.
-
-	return ret
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	return c.nReduceI == c.nReduce
 }
 
 // create a Coordinator.
@@ -88,6 +98,7 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	c := Coordinator{
 		InputFiles: i,
 		nReduce:    nReduce,
+		nReduceI:   0,
 	}
 
 	// Your code here.
