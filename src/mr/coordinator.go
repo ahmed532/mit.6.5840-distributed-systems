@@ -1,8 +1,6 @@
 package mr
 
 import (
-	"errors"
-	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -40,7 +38,7 @@ func (c *Coordinator) Example(args *ExampleArgs, reply *ExampleReply) error {
 func (c *Coordinator) AskForFile(args *AskForFileArgs, reply *AskForFileReply) error {
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	s10, _ := time.ParseDuration("20s")
+	s10, _ := time.ParseDuration("10s")
 	for i, f := range c.InputFiles {
 		if f.processed == 0 {
 			reply.Name = f.file
@@ -117,22 +115,27 @@ func (c *Coordinator) server() {
 func (c *Coordinator) Done() bool {
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	for s := range c.reduces {
+	// for _, s := range c.reduces {
+	// 	print(s, " ")
+	// }
+	// println()
+	for _, s := range c.reduces {
 		if s != 2 {
 			return false
 		}
 	}
-	if _, err := os.Stat(fmt.Sprintf("t-mr-out-%d", c.nReduce-1)); err == nil {
-		for i := 0; i < c.nReduce; i++ {
-			os.Rename(fmt.Sprintf("t-mr-out-%d", i), fmt.Sprintf("mr-out-%d", i))
-		}
-		return true
-	} else if errors.Is(err, os.ErrNotExist) {
-		return false
-	} else {
-		log.Fatal("Big finish error")
-	}
-	return false
+	return true
+	// if _, err := os.Stat(fmt.Sprintf("t-mr-out-%d", c.nReduce-1)); err == nil {
+	// 	for i := 0; i < c.nReduce; i++ {
+
+	// 	}
+	// 	return true
+	// } else if errors.Is(err, os.ErrNotExist) {
+	// 	return false
+	// } else {
+	// 	log.Fatal("Big finish error")
+	// }
+	// return false
 }
 
 func (c *Coordinator) CommitFile(args *CommitFileArgs, reply *CommitFileReply) error {

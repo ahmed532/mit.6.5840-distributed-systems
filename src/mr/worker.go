@@ -111,6 +111,7 @@ func reduceWorker(reducef func(string, []string) string, reduceI int) {
 		i = j
 	}
 	ofile.Close()
+	os.Rename(fmt.Sprintf("t-mr-out-%d", reduceI), fmt.Sprintf("mr-out-%d", reduceI))
 	CommitOutput(reduceI)
 }
 
@@ -177,9 +178,8 @@ func AskForFile() (string, int, int) {
 	if ok {
 		return reply.Name, reply.State, reply.ReducerI
 	} else {
-		log.Fatal("AskForFile Call failed")
+		return "wait", -1, -1
 	}
-	return "", -1, -1
 }
 
 func GetNReduce() int {
